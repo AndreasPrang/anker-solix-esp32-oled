@@ -39,7 +39,7 @@
 #define LANG(de, en)          _LANG_EXPAND(LANGUAGE, de, en)
 
 // ── Display ────────────────────────────────────────────────
-U8G2_SH1106_128X64_NONAME_F_HW_I2C display(U8G2_R2, U8X8_PIN_NONE);
+U8G2_SH1106_128X64_NONAME_F_HW_I2C display(U8G2_R2, U8X8_PIN_NONE, OLED_SCL, OLED_SDA);
 
 // ── Anker API ──────────────────────────────────────────────
 static const char* API_BASE = "https://ankerpower-api-eu.anker.com";
