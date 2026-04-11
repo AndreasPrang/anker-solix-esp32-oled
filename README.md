@@ -1,50 +1,52 @@
 # Anker Solix 3 Pro – OLED Display
 
-Live-Statusanzeige für die Anker Solix Solaranlage auf einem ESP32 mit 0,96" OLED.
+Live status display for the Anker Solix solar system on an ESP32 with a 0.96" OLED.
 
-Läuft vollständig auf dem ESP32 – kein Server, kein Proxy nötig.
+Runs entirely on the ESP32 – no server, no proxy required.
 
-## Anzeige
+## Display
 
 ```
-Solix 3 Pro        [OK]
+Solix 3 Pro        14:35
 ────────────────────────
-Sol:    450W
-Bat:    85% Chr
-Hom:    320W
-Grd:      0W Bzg
+Solar:    450W
+Akku:      85%
+Haus:     320W
+Netz:       0W Bzg
 ```
 
-| Zeile | Bedeutung                              |
-|-------|----------------------------------------|
-| Sol   | Aktuelle Solarleistung (W)             |
-| Bat   | Batteriestand (%) + Chr/Dch/Stb        |
-| Hom   | Hausverbrauch (W)                      |
-| Grd   | Netzbezug (+) oder Einspeisung (−) (W) |
+| Row   | Description                              |
+|-------|------------------------------------------|
+| Solar | Current solar power (W)                  |
+| Akku  | Battery state of charge (%)              |
+| Haus  | Home consumption (W)                     |
+| Netz  | Grid import (+) or export (−) (W)        |
+
+The top-right corner shows the time of the last successful data fetch.
 
 ## Hardware
 
-| Bauteil | Spezifikation |
-|---------|---------------|
-| Mikrocontroller | ESP32 (beliebiges Board) |
-| Display | 0,96" OLED, 128×64, I2C, SH1106 oder SSD1306 |
+| Component | Specification |
+|-----------|---------------|
+| Microcontroller | ESP32 (any board) |
+| Display | 0.96" OLED, 128×64, I2C, SH1106 or SSD1306 |
 
-### Verdrahtung
+### Wiring
 
-| OLED-Pin | ESP32-Pin |
+| OLED pin | ESP32 pin |
 |----------|-----------|
-| VCC      | 3,3 V     |
+| VCC      | 3.3 V     |
 | GND      | GND       |
 | SDA      | GPIO 21   |
 | SCL      | GPIO 22   |
 
-## Voraussetzungen
+## Requirements
 
-- [arduino-cli](https://arduino.github.io/arduino-cli/) oder Arduino IDE 2.x
-- ESP32 Board Package: `esp32:esp32` ≥ 3.x
-- Bibliotheken: `U8g2`, `ArduinoJson`
+- [arduino-cli](https://arduino.github.io/arduino-cli/) or Arduino IDE 2.x
+- ESP32 board package: `esp32:esp32` ≥ 3.x
+- Libraries: `U8g2`, `ArduinoJson`
 
-### arduino-cli Setup (einmalig)
+### arduino-cli setup (once)
 
 ```bash
 arduino-cli config add board_manager.additional_urls \
@@ -58,45 +60,46 @@ arduino-cli lib install "U8g2" "ArduinoJson"
 ## Installation
 
 ```bash
-# 1. Konfiguration anlegen
+# 1. Create config file
 cp oled_anker_direct/config.h.example oled_anker_direct/config.h
 
-# 2. config.h mit Editor öffnen und ausfüllen:
+# 2. Open config.h and fill in your values:
 #    - WIFI_SSID / WIFI_PASSWORD
 #    - ANKER_EMAIL / ANKER_PASSWORD
+#    - LANGUAGE  (de or en)
 
-# 3. Kompilieren & Flashen
+# 3. Compile & flash
 arduino-cli compile --fqbn esp32:esp32:esp32 oled_anker_direct/
 arduino-cli upload  --fqbn esp32:esp32:esp32 --port /dev/cu.usbserial-0001 oled_anker_direct/
 ```
 
-Port unter macOS prüfen: `ls /dev/cu.*`
-Port unter Linux: `/dev/ttyUSB0` oder `/dev/ttyACM0`
+Find the port on macOS: `ls /dev/cu.*`
+Find the port on Linux: `/dev/ttyUSB0` or `/dev/ttyACM0`
 
-## Funktionsweise
+## How it works
 
-1. ESP32 verbindet sich mit dem WLAN und synchronisiert die Zeit via NTP
-2. **ECDH P-256** – ephemeres Schlüsselpaar wird erzeugt; Shared Secret mit dem Anker-Serverschlüssel berechnet
-3. **AES-256-CBC** – Passwort wird mit dem Shared Secret verschlüsselt
-4. Login-Request an `https://ankerpower-api-eu.anker.com/passport/login`
-5. Alle `REFRESH_SEC` Sekunden werden aktuelle Leistungsdaten von der Anker Cloud abgefragt
-6. Token-Ablauf (7 Tage) wird automatisch erkannt und neu eingeloggt
+1. The ESP32 connects to WiFi and syncs time via NTP (timezone is set via POSIX TZ string, DST handled automatically)
+2. **ECDH P-256** – an ephemeral key pair is generated; the shared secret is computed against the Anker server public key
+3. **AES-256-CBC** – the password is encrypted using the shared secret
+4. Login request to `https://ankerpower-api-eu.anker.com/passport/login`
+5. Every `REFRESH_SEC` seconds, current power data is fetched from the Anker Cloud
+6. Token expiry (7 days) is detected automatically and triggers a re-login
 
-Die Implementierung basiert auf dem Reverse Engineering der Anker API durch
+This implementation is based on the reverse engineering of the Anker API by
 [thomluther/anker-solix-api](https://github.com/thomluther/anker-solix-api).
 
-## Display-Typ anpassen
+## Changing the display type
 
-Die Datei `oled_anker_direct.ino` verwendet standardmäßig den **SH1106**.
-Für SSD1306 die folgende Zeile ersetzen:
+`oled_anker_direct.ino` uses the **SH1106** by default.
+For SSD1306, replace the following line:
 
 ```cpp
-// SH1106 (Standard):
+// SH1106 (default):
 U8G2_SH1106_128X64_NONAME_F_HW_I2C display(U8G2_R2, U8X8_PIN_NONE);
 
 // SSD1306:
 U8G2_SSD1306_128X64_NONAME_F_HW_I2C display(U8G2_R2, U8X8_PIN_NONE);
 ```
 
-`U8G2_R2` = 180° Rotation (Display physisch gedreht montiert).
-Ohne Rotation: `U8G2_R0`.
+`U8G2_R2` = 180° rotation (display mounted upside down).
+No rotation: `U8G2_R0`.
