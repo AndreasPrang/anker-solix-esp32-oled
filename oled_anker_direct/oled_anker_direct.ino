@@ -244,24 +244,26 @@ static void drawSolixData() {
 
   char buf[22];
 
+  // Rows 2-5: values aligned so units (W / %) are all at column 12 (x=72px).
+  // "Solar:" is 6 chars → 1 space; others are 5 chars → 2 spaces; all use %5d.
+
   // Row 2: solar
   snprintf(buf, sizeof(buf), LANG("Solar: %5dW", "Solar: %5dW"), g_data.solar_w);
   display.drawStr(0, 26, buf);
 
   // Row 3: battery
-  snprintf(buf, sizeof(buf), LANG("Akku: %3d%%", "Batt: %3d%%"),
-           g_data.battery_soc);
+  snprintf(buf, sizeof(buf), LANG("Akku:  %5d%%", "Batt:  %5d%%"), g_data.battery_soc);
   display.drawStr(0, 38, buf);
 
   // Row 4: home consumption
-  snprintf(buf, sizeof(buf), LANG("Haus: %5dW", "Home: %5dW"), g_data.home_w);
+  snprintf(buf, sizeof(buf), LANG("Haus:  %5dW", "Home:  %5dW"), g_data.home_w);
   display.drawStr(0, 50, buf);
 
   // Row 5: grid (import/export)
   if (g_data.grid_w >= 0)
-    snprintf(buf, sizeof(buf), LANG("Netz: %5dW Bzg", "Grid: %5dW In "), g_data.grid_w);
+    snprintf(buf, sizeof(buf), LANG("Netz:  %5dW Bzg", "Grid:  %5dW In "), g_data.grid_w);
   else
-    snprintf(buf, sizeof(buf), LANG("Netz: %5dW Ein", "Grid: %5dW Out"), -g_data.grid_w);
+    snprintf(buf, sizeof(buf), LANG("Netz:  %5dW Ein", "Grid:  %5dW Out"), -g_data.grid_w);
   display.drawStr(0, 62, buf);
 
   display.sendBuffer();
