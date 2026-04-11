@@ -499,8 +499,10 @@ static void connectWiFi() {
   }
   Serial.print("[WiFi] IP: "); Serial.println(WiFi.localIP());
 
-  // NTP für Zeitstempel
-  configTime(3600, 0, "pool.ntp.org", "time.nist.gov");
+  // NTP + Zeitzone (POSIX-String → automatische Sommer-/Winterzeit)
+  configTime(0, 0, "pool.ntp.org", "time.nist.gov");
+  setenv("TZ", LANG("CET-1CEST,M3.5.0,M10.5.0/3", "UTC0"), 1);
+  tzset();
   dispMsg(LANG("WLAN OK", "WiFi OK"),
           WiFi.localIP().toString().c_str(),
           LANG("Warte auf NTP...", "Waiting for NTP..."));
