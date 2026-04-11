@@ -32,10 +32,12 @@
 // ── Sprach-Makros ──────────────────────────────────────────
 // In config.h: #define LANGUAGE de   (oder en)
 // Wählt zur Kompilierzeit die richtige Sprache.
-#define _LANG2(L, de, en)  _LANG_##L(de, en)
-#define _LANG_de(de, en)   de
-#define _LANG_en(de, en)   en
-#define LANG(de, en)       _LANG2(LANGUAGE, de, en)
+// Zwei Indirektions-Ebenen nötig, damit LANGUAGE vor ## expandiert wird.
+#define _LANG_de(de, en)    de
+#define _LANG_en(de, en)    en
+#define _LANG_PASTE(L, d, e) _LANG_##L(d, e)
+#define _LANG_EXPAND(L, d, e) _LANG_PASTE(L, d, e)
+#define LANG(de, en)        _LANG_EXPAND(LANGUAGE, de, en)
 
 // ── Display ────────────────────────────────────────────────
 U8G2_SH1106_128X64_NONAME_F_HW_I2C display(U8G2_R2, U8X8_PIN_NONE);
@@ -65,6 +67,7 @@ struct SolixData {
 };
 static SolixData g_data;
 static char g_error[48] = {0};
+static time_t g_last_fetch_time = 0;  // Zeitpunkt letzter erfolgreicher Abruf
 
 // ══════════════════════════════════════════════════════════
 //  CRYPTO HELPERS
@@ -230,9 +233,14 @@ static void drawSolixData() {
     return;
   }
 
-  // Zeile 1: Titel + Online
+  // Zeile 1: Titel + Zeitstempel letzter Abruf
   display.drawStr(0, 10, "Solix 3 Pro");
-  display.drawStr(92, 10, g_data.online ? "[OK]" : "[OFF]");
+  if (g_last_fetch_time > 0) {
+    char timeBuf[6];
+    struct tm* t = localtime(&g_last_fetch_time);
+    strftime(timeBuf, sizeof(timeBuf), "%H:%M", t);
+    display.drawStr(98, 10, timeBuf);  // 5 Zeichen × 6 px = 30 px, passt ab x=98
+  }
   display.drawHLine(0, 13, 128);
 
   char buf[22];
@@ -466,6 +474,7 @@ static bool ankerFetchData() {
   g_data.valid       = true;
   strncpy(g_data.bat_status, bat_stat, sizeof(g_data.bat_status) - 1);
   g_error[0] = 0;
+  g_last_fetch_time = time(nullptr);
 
   Serial.printf("[Anker] Sol=%dW Bat=%d%%(%s%dW) Home=%dW Grid=%dW\n",
                 photovoltaic, battery_pct, bat_stat, bat_charge_w, output_w, grid_w);
