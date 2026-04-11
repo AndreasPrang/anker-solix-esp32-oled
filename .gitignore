@@ -1,0 +1,21 @@
+# Zugangsdaten – niemals einchecken
+oled_anker_direct/config.h
+config/config.json
+
+# Arduino Build-Artefakte
+build/
+*.elf
+*.bin
+*.hex
+*.map
+
+# macOS
+.DS_Store
+**/.DS_Store
+
+# arduino-cli Binary
+bin/
+
+# Editor
+.vscode/
+*.swp

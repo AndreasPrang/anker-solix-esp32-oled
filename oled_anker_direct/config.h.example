@@ -1,0 +1,23 @@
+#pragma once
+
+// ════════════════════════════════════════════════════
+//  Kopiere diese Datei als config.h und fülle sie aus.
+//  cp config.h.example config.h
+// ════════════════════════════════════════════════════
+
+// WLAN
+#define WIFI_SSID      "Dein_WLAN_Name"
+#define WIFI_PASSWORD  "Dein_WLAN_Passwort"
+
+// Anker-Account (App-Login)
+#define ANKER_EMAIL    "deine@email.de"
+#define ANKER_PASSWORD "dein_anker_passwort"
+#define ANKER_COUNTRY  "DE"
+
+// Zeitzone-Offset in Millisekunden
+// GMT+1  = 3600000  (Deutschland Winter)
+// GMT+2  = 7200000  (Deutschland Sommer)
+#define ANKER_TZ_OFFSET_MS  3600000
+
+// Aktualisierungsintervall in Sekunden
+#define REFRESH_SEC  30
