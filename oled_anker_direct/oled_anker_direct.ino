@@ -208,6 +208,97 @@ static void md5Hex(const char* input, char* hexOut) {
 }
 
 // ══════════════════════════════════════════════════════════
+//  SPLASH ANIMATION
+// ══════════════════════════════════════════════════════════
+
+// Lightning bolt built from four filled triangles forming two trapezoids.
+// Upper section slants upper-right → lower-left.
+// Lower section is offset right by 4 px to create the characteristic kink.
+//
+//   ████████████████        ← upper trapezoid (y = 3..21)
+//    ████████████████
+//     ████████████████
+//      ████████████████
+//           ████████████████  ← lower trapezoid (y = 21..41)
+//            ████████████████
+//             ████████████████
+//              ████████████████
+//
+static void drawBolt() {
+  display.setDrawColor(1);
+  // Upper trapezoid
+  display.drawTriangle(52, 3,  68, 3,  60, 21);
+  display.drawTriangle(52, 3,  60, 21, 44, 21);
+  // Lower trapezoid (4 px kink to the right)
+  display.drawTriangle(64, 21, 80, 21, 72, 41);
+  display.drawTriangle(64, 21, 72, 41, 56, 41);
+}
+
+static void splashAnimation() {
+  // ── Phase 1: bolt flickers three times ──────────────────
+  const int onMs[]  = { 60, 80, 100 };
+  const int offMs[] = { 80, 80,  40 };
+  for (int i = 0; i < 3; i++) {
+    display.clearBuffer();
+    drawBolt();
+    display.sendBuffer();
+    delay(onMs[i]);
+    display.clearBuffer();
+    display.sendBuffer();
+    delay(offMs[i]);
+  }
+
+  // ── Phase 2: bolt holds ──────────────────────────────────
+  display.clearBuffer();
+  drawBolt();
+  display.sendBuffer();
+  delay(260);
+
+  // ── Phase 3: "ANKER" wipes in from left ─────────────────
+  display.setFont(u8g2_font_logisoso20_tr);
+  int tw = (int)display.getStrWidth("ANKER");
+  int tx = (128 - tw) / 2;
+  int ty = 63;
+
+  for (int clip = tx; clip <= tx + tw + 4; clip += 4) {
+    display.clearBuffer();
+    drawBolt();
+    display.setClipWindow(0, 42, clip, 63);
+    display.drawStr(tx, ty, "ANKER");
+    display.setMaxClipWindow();
+    display.sendBuffer();
+    delay(14);
+  }
+
+  // ── Phase 4: full logo – brief hold ─────────────────────
+  display.clearBuffer();
+  drawBolt();
+  display.setFont(u8g2_font_logisoso20_tr);
+  display.drawStr(tx, ty, "ANKER");
+  display.sendBuffer();
+  delay(320);
+
+  // ── Phase 5: white flash ─────────────────────────────────
+  display.setDrawColor(1);
+  display.drawBox(0, 0, 128, 64);
+  display.sendBuffer();
+  delay(80);
+  display.clearBuffer();
+  display.sendBuffer();
+  delay(55);
+
+  // ── Phase 6: logo reappears, hold, hand off ──────────────
+  display.clearBuffer();
+  drawBolt();
+  display.setFont(u8g2_font_logisoso20_tr);
+  display.drawStr(tx, ty, "ANKER");
+  display.sendBuffer();
+  delay(380);
+
+  display.setDrawColor(1);  // restore for rest of firmware
+}
+
+// ══════════════════════════════════════════════════════════
 //  DISPLAY
 // ══════════════════════════════════════════════════════════
 
@@ -519,14 +610,7 @@ void setup() {
   Serial.begin(115200);
   display.begin();
 
-  // Splash screen
-  display.clearBuffer();
-  display.setFont(u8g2_font_ncenB10_tr);
-  display.drawStr(8, 28, "Anker Solix");
-  display.setFont(u8g2_font_6x10_tr);
-  display.drawStr(18, 46, "Display v2.0");
-  display.sendBuffer();
-  delay(1500);
+  splashAnimation();
 
   // Skip TLS certificate verification (acceptable for local/home use)
   s_wifiClient.setInsecure();
