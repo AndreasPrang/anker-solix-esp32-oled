@@ -238,7 +238,7 @@ static void drawSolixData() {
   if (g_last_fetch_time > 0) {
     char timeBuf[6];
     struct tm* t = localtime(&g_last_fetch_time);
-    strftime(timeBuf, sizeof(timeBuf), "%H:%M", t);
+    strftime(timeBuf, sizeof(timeBuf), LANG("%H:%M", "%I:%M"), t);
     display.drawStr(98, 10, timeBuf);  // 5 Zeichen × 6 px = 30 px, passt ab x=98
   }
   display.drawHLine(0, 13, 128);
