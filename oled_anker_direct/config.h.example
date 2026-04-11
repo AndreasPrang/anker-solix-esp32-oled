@@ -5,6 +5,9 @@
 //  cp config.h.example config.h
 // ════════════════════════════════════════════════════
 
+// Sprache / Language: de  oder  en  (ohne Anführungszeichen)
+#define LANGUAGE de
+
 // WLAN
 #define WIFI_SSID      "Dein_WLAN_Name"
 #define WIFI_PASSWORD  "Dein_WLAN_Passwort"

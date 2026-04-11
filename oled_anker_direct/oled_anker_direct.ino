@@ -29,6 +29,14 @@
 
 #include "config.h"
 
+// ── Sprach-Makros ──────────────────────────────────────────
+// In config.h: #define LANGUAGE de   (oder en)
+// Wählt zur Kompilierzeit die richtige Sprache.
+#define _LANG2(L, de, en)  _LANG_##L(de, en)
+#define _LANG_de(de, en)   de
+#define _LANG_en(de, en)   en
+#define LANG(de, en)       _LANG2(LANGUAGE, de, en)
+
 // ── Display ────────────────────────────────────────────────
 U8G2_SH1106_128X64_NONAME_F_HW_I2C display(U8G2_R2, U8X8_PIN_NONE);
 
@@ -217,7 +225,7 @@ static void drawSolixData() {
 
   if (!g_data.valid) {
     display.drawStr(0, 12, "Anker Solix");
-    display.drawStr(0, 26, g_error[0] ? g_error : "Verbinde...");
+    display.drawStr(0, 26, g_error[0] ? g_error : LANG("Verbinde...", "Connecting..."));
     display.sendBuffer();
     return;
   }
@@ -230,23 +238,23 @@ static void drawSolixData() {
   char buf[22];
 
   // Zeile 2: Solar
-  snprintf(buf, sizeof(buf), "Sol: %5dW", g_data.solar_w);
+  snprintf(buf, sizeof(buf), LANG("Solar: %5dW", "Solar: %5dW"), g_data.solar_w);
   display.drawStr(0, 26, buf);
 
-  // Zeile 3: Batterie
-  snprintf(buf, sizeof(buf), "Bat: %3d%% %s",
+  // Zeile 3: Batterie / Battery
+  snprintf(buf, sizeof(buf), LANG("Akku: %3d%% %s", "Batt: %3d%% %s"),
            g_data.battery_soc, g_data.bat_status);
   display.drawStr(0, 38, buf);
 
-  // Zeile 4: Haus
-  snprintf(buf, sizeof(buf), "Hom: %5dW", g_data.home_w);
+  // Zeile 4: Haus / Home
+  snprintf(buf, sizeof(buf), LANG("Haus: %5dW", "Home: %5dW"), g_data.home_w);
   display.drawStr(0, 50, buf);
 
-  // Zeile 5: Grid
+  // Zeile 5: Netz / Grid
   if (g_data.grid_w >= 0)
-    snprintf(buf, sizeof(buf), "Grd: %5dW Bzg", g_data.grid_w);
+    snprintf(buf, sizeof(buf), LANG("Netz: %5dW Bzg", "Grid: %5dW In "), g_data.grid_w);
   else
-    snprintf(buf, sizeof(buf), "Grd: %5dW Ein", -g_data.grid_w);
+    snprintf(buf, sizeof(buf), LANG("Netz: %5dW Ein", "Grid: %5dW Out"), -g_data.grid_w);
   display.drawStr(0, 62, buf);
 
   display.sendBuffer();
@@ -291,20 +299,21 @@ static bool httpPost(const char* endpoint, const String& body,
 // ══════════════════════════════════════════════════════════
 
 static bool ankerLogin() {
-  dispMsg("Anker Login...", "ECDH + AES...");
+  dispMsg(LANG("Anker Login...", "Anker Login..."),
+          LANG("ECDH + AES...",  "ECDH + AES..."));
 
   // 1) ECDH: Shared Secret berechnen
   char    clientPubHex[131] = {0};
   uint8_t sharedSecret[32]  = {0};
   if (!ecdhComputeShared(clientPubHex, sharedSecret)) {
-    strncpy(g_error, "ECDH Fehler", sizeof(g_error));
+    strncpy(g_error, LANG("ECDH Fehler", "ECDH Error"), sizeof(g_error));
     return false;
   }
 
   // 2) Passwort mit AES-256-CBC verschlüsseln
   char encPassword[512] = {0};
   if (!aesEncryptB64(ANKER_PASSWORD, sharedSecret, encPassword, sizeof(encPassword))) {
-    strncpy(g_error, "AES Fehler", sizeof(g_error));
+    strncpy(g_error, LANG("AES Fehler", "AES Error"), sizeof(g_error));
     return false;
   }
 
@@ -326,7 +335,8 @@ static bool ankerLogin() {
   String body;
   serializeJson(doc, body);
 
-  dispMsg("Anker Login...", "Sende Anfrage...");
+  dispMsg(LANG("Anker Login...", "Anker Login..."),
+          LANG("Sende Anfrage...", "Sending request..."));
 
   // 5) POST /passport/login
   String response;
@@ -338,12 +348,12 @@ static bool ankerLogin() {
   // 6) Antwort parsen
   JsonDocument resp;
   if (deserializeJson(resp, response) != DeserializationError::Ok) {
-    strncpy(g_error, "Login JSON Fehler", sizeof(g_error));
+    strncpy(g_error, LANG("Login JSON Fehler", "Login JSON Error"), sizeof(g_error));
     return false;
   }
 
   if (resp["code"] != 0) {
-    String msg = resp["msg"] | "unbekannt";
+    String msg = resp["msg"] | LANG("unbekannt", "unknown");
     snprintf(g_error, sizeof(g_error), "Login: %s", msg.substring(0,30).c_str());
     return false;
   }
@@ -352,7 +362,7 @@ static bool ankerLogin() {
   const char* user_id = resp["data"]["user_id"];
 
   if (!token || !user_id) {
-    strncpy(g_error, "Login: kein Token", sizeof(g_error));
+    strncpy(g_error, LANG("Login: kein Token", "Login: no token"), sizeof(g_error));
     return false;
   }
 
@@ -368,7 +378,7 @@ static bool ankerLogin() {
 static bool ankerGetSiteId() {
   String response;
   if (!httpPost("power_service/v1/site/get_site_list", "{}", response)) {
-    snprintf(g_error, sizeof(g_error), "SiteList: Fehler");
+    snprintf(g_error, sizeof(g_error), LANG("SiteList: Fehler", "SiteList: Error"));
     return false;
   }
 
@@ -378,7 +388,7 @@ static bool ankerGetSiteId() {
 
   JsonArray list = doc["data"]["site_list"];
   if (list.isNull() || list.size() == 0) {
-    strncpy(g_error, "Keine Site gefunden", sizeof(g_error));
+    strncpy(g_error, LANG("Keine Site gefunden", "No site found"), sizeof(g_error));
     return false;
   }
 
@@ -395,7 +405,7 @@ static bool ankerFetchData() {
   String body = "{\"site_id\":\"" + String(g_site_id) + "\"}";
   String response;
   if (!httpPost("power_service/v1/site/get_scen_info", body, response)) {
-    snprintf(g_error, sizeof(g_error), "ScenInfo: Fehler");
+    snprintf(g_error, sizeof(g_error), LANG("ScenInfo: Fehler", "ScenInfo: Error"));
     return false;
   }
 
@@ -432,13 +442,13 @@ static bool ankerFetchData() {
   const char* bat_stat;
   if (charging_st == 0) {
     bat_power_w = bat_charge_w;
-    bat_stat = "Chr";
+    bat_stat = LANG("Lad", "Chg");
   } else if (charging_st == 1) {
     bat_power_w = -bat_charge_w;
-    bat_stat = "Dch";
+    bat_stat = LANG("Ent", "Dch");
   } else {
     bat_power_w = 0;
-    bat_stat = "Stb";
+    bat_stat = LANG("Stb", "Stb");
   }
 
   // Grid
@@ -467,21 +477,24 @@ static bool ankerFetchData() {
 // ══════════════════════════════════════════════════════════
 
 static void connectWiFi() {
-  dispMsg("WLAN verbinden...", WIFI_SSID);
+  dispMsg(LANG("WLAN verbinden...", "Connecting WiFi..."), WIFI_SSID);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   int tries = 0;
   while (WiFi.status() != WL_CONNECTED && tries < 40) {
     delay(500); tries++;
   }
   if (WiFi.status() != WL_CONNECTED) {
-    dispMsg("WLAN Fehler!", "Prüfe config.h");
+    dispMsg(LANG("WLAN Fehler!", "WiFi Error!"),
+            LANG("Prüfe config.h", "Check config.h"));
     while (true) delay(1000);
   }
   Serial.print("[WiFi] IP: "); Serial.println(WiFi.localIP());
 
   // NTP für Zeitstempel
   configTime(3600, 0, "pool.ntp.org", "time.nist.gov");
-  dispMsg("WLAN OK", WiFi.localIP().toString().c_str(), "Warte auf NTP...");
+  dispMsg(LANG("WLAN OK", "WiFi OK"),
+          WiFi.localIP().toString().c_str(),
+          LANG("Warte auf NTP...", "Waiting for NTP..."));
   // Kurz warten bis NTP synchronisiert
   time_t t = 0;
   for (int i = 0; i < 20 && t < 1000000; i++) { delay(500); t = time(nullptr); }
@@ -513,10 +526,12 @@ void setup() {
 
   // Login + erste Daten holen
   if (ankerLogin()) {
-    dispMsg("Login OK!", "Hole Site-ID...");
+    dispMsg(LANG("Login OK!", "Login OK!"),
+            LANG("Hole Site-ID...", "Getting Site-ID..."));
     delay(500);
     if (ankerGetSiteId()) {
-      dispMsg("Site gefunden", "Lade Daten...");
+      dispMsg(LANG("Site gefunden", "Site found"),
+              LANG("Lade Daten...", "Loading data..."));
       delay(500);
       ankerFetchData();
     }
