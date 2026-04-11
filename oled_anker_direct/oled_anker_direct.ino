@@ -1,13 +1,13 @@
 /**
- * Anker Solix 3 Pro – direktes OLED Status Display
+ * Anker Solix 3 Pro – direct OLED status display
  * ESP32 + 0.96" SH1106 128×64 I2C
  *
- * Authentifizierung direkt gegen Anker Cloud:
- *   ECDH P-256  → Shared Secret
- *   AES-256-CBC → Passwort-Verschlüsselung
+ * Authentication directly against Anker Cloud:
+ *   ECDH P-256  → shared secret
+ *   AES-256-CBC → password encryption
  *   MD5         → gtoken
  *
- * Keine Middleware nötig – läuft komplett auf dem ESP32.
+ * No middleware required – runs entirely on the ESP32.
  */
 
 #include <WiFi.h>
@@ -18,7 +18,7 @@
 #include <Wire.h>
 #include <time.h>
 
-// mbedTLS (in ESP32 Arduino Framework enthalten)
+// mbedTLS (included in ESP32 Arduino framework)
 #include "mbedtls/ecdh.h"
 #include "mbedtls/ecp.h"
 #include "mbedtls/aes.h"
@@ -29,52 +29,51 @@
 
 #include "config.h"
 
-// ── Sprach-Makros ──────────────────────────────────────────
-// In config.h: #define LANGUAGE de   (oder en)
-// Wählt zur Kompilierzeit die richtige Sprache.
-// Zwei Indirektions-Ebenen nötig, damit LANGUAGE vor ## expandiert wird.
-#define _LANG_de(de, en)    de
-#define _LANG_en(de, en)    en
-#define _LANG_PASTE(L, d, e) _LANG_##L(d, e)
+// ── i18n macros ────────────────────────────────────────────
+// Set LANGUAGE in config.h to either: de  or  en  (no quotes)
+// Two levels of indirection are required so LANGUAGE is expanded before ##.
+#define _LANG_de(de, en)      de
+#define _LANG_en(de, en)      en
+#define _LANG_PASTE(L, d, e)  _LANG_##L(d, e)
 #define _LANG_EXPAND(L, d, e) _LANG_PASTE(L, d, e)
-#define LANG(de, en)        _LANG_EXPAND(LANGUAGE, de, en)
+#define LANG(de, en)          _LANG_EXPAND(LANGUAGE, de, en)
 
 // ── Display ────────────────────────────────────────────────
 U8G2_SH1106_128X64_NONAME_F_HW_I2C display(U8G2_R2, U8X8_PIN_NONE);
 
 // ── Anker API ──────────────────────────────────────────────
-static const char* API_BASE    = "https://ankerpower-api-eu.anker.com";
+static const char* API_BASE = "https://ankerpower-api-eu.anker.com";
 static const char* SERVER_PUBKEY_HEX =
     "04c5c00c4f8d1197cc7c3167c52bf7acb054d722f0ef08dcd7e0883236e0d72a3"
     "868d9750cb47fa4619248f3d83f0f662671dadc6e2d31c2f41db0161651c7c076";
 
-// ── Auth-State ─────────────────────────────────────────────
+// ── Auth state ─────────────────────────────────────────────
 static char g_auth_token[512] = {0};
 static char g_gtoken[33]      = {0};
 static char g_site_id[64]     = {0};
 static bool g_logged_in       = false;
 
-// ── Anzeige-Daten ──────────────────────────────────────────
+// ── Display data ───────────────────────────────────────────
 struct SolixData {
-  int  solar_w     = 0;
-  int  battery_soc = 0;
-  int  bat_power_w = 0;  // + lädt, - entlädt
-  int  home_w      = 0;
-  int  grid_w      = 0;  // + Bezug, - Einspeisung
+  int  solar_w      = 0;
+  int  battery_soc  = 0;
+  int  bat_power_w  = 0;  // positive = charging, negative = discharging
+  int  home_w       = 0;
+  int  grid_w       = 0;  // positive = import, negative = export
   char bat_status[8] = "---";
-  bool online      = false;
-  bool valid       = false;
+  bool online       = false;
+  bool valid        = false;
 };
 static SolixData g_data;
-static char g_error[48] = {0};
-static time_t g_last_fetch_time = 0;  // Zeitpunkt letzter erfolgreicher Abruf
+static char   g_error[48]         = {0};
+static time_t g_last_fetch_time   = 0;  // timestamp of last successful fetch
 
 // ══════════════════════════════════════════════════════════
 //  CRYPTO HELPERS
 // ══════════════════════════════════════════════════════════
 
-static mbedtls_entropy_context   s_entropy;
-static mbedtls_ctr_drbg_context  s_ctr_drbg;
+static mbedtls_entropy_context  s_entropy;
+static mbedtls_ctr_drbg_context s_ctr_drbg;
 static bool s_rng_ready = false;
 
 static void ensureRng() {
@@ -85,7 +84,7 @@ static void ensureRng() {
   s_rng_ready = true;
 }
 
-// Hex-String → Bytes
+// Hex string → bytes
 static void hexToBytes(const char* hex, uint8_t* out, size_t len) {
   for (size_t i = 0; i < len; i++) {
     char b[3] = { hex[i*2], hex[i*2+1], 0 };
@@ -93,7 +92,7 @@ static void hexToBytes(const char* hex, uint8_t* out, size_t len) {
   }
 }
 
-// Bytes → Hex-String (null-terminiert)
+// Bytes → null-terminated hex string
 static void bytesToHex(const uint8_t* in, size_t len, char* out) {
   for (size_t i = 0; i < len; i++) sprintf(out + i*2, "%02x", in[i]);
   out[len * 2] = 0;
@@ -101,18 +100,18 @@ static void bytesToHex(const uint8_t* in, size_t len, char* out) {
 
 /**
  * ECDH P-256:
- *   - Generiert ephemeres Schlüsselpaar
- *   - Berechnet Shared Secret mit Anker-Serverschlüssel
- *   - Gibt client_pub_hex (130 Zeichen + NUL) und shared_secret (32 Bytes) zurück
+ *   - Generates an ephemeral key pair
+ *   - Computes the shared secret against the Anker server public key
+ *   - Returns clientPubHex (130 chars + NUL) and sharedSecret (32 bytes)
  */
 static bool ecdhComputeShared(char* clientPubHex, uint8_t* sharedSecret) {
   ensureRng();
 
   mbedtls_ecp_group grp;
-  mbedtls_ecp_point Q;   // Client Public Key
-  mbedtls_ecp_point Qp;  // Server Public Key
-  mbedtls_mpi     d;     // Client Private Key
-  mbedtls_mpi     z;     // Shared Secret (x-Koordinate)
+  mbedtls_ecp_point Q;   // client public key
+  mbedtls_ecp_point Qp;  // server public key
+  mbedtls_mpi      d;    // client private key
+  mbedtls_mpi      z;    // shared secret (x-coordinate)
 
   mbedtls_ecp_group_init(&grp);
   mbedtls_ecp_point_init(&Q);
@@ -122,16 +121,16 @@ static bool ecdhComputeShared(char* clientPubHex, uint8_t* sharedSecret) {
 
   int ret = 0;
 
-  // P-256 Gruppe laden
+  // Load P-256 group
   ret = mbedtls_ecp_group_load(&grp, MBEDTLS_ECP_DP_SECP256R1);
   if (ret) goto done;
 
-  // Ephemeres Schlüsselpaar erzeugen
+  // Generate ephemeral key pair
   ret = mbedtls_ecp_gen_keypair(&grp, &d, &Q, mbedtls_ctr_drbg_random, &s_ctr_drbg);
   if (ret) goto done;
 
   {
-    // Public Key exportieren (unkomprimiert: 04 || X || Y = 65 Bytes)
+    // Export public key (uncompressed: 04 || X || Y = 65 bytes)
     uint8_t pubBytes[65];
     size_t  pubLen;
     ret = mbedtls_ecp_point_write_binary(&grp, &Q, MBEDTLS_ECP_PF_UNCOMPRESSED,
@@ -139,19 +138,19 @@ static bool ecdhComputeShared(char* clientPubHex, uint8_t* sharedSecret) {
     if (ret || pubLen != 65) goto done;
     bytesToHex(pubBytes, 65, clientPubHex);
 
-    // Server Public Key parsen (130 Hex-Zeichen → 65 Bytes)
+    // Parse server public key (130 hex chars → 65 bytes)
     uint8_t serverPubBytes[65];
     hexToBytes(SERVER_PUBKEY_HEX, serverPubBytes, 65);
     ret = mbedtls_ecp_point_read_binary(&grp, &Qp, serverPubBytes, 65);
     if (ret) goto done;
   }
 
-  // ECDH: Shared Secret = d * Qp  →  x-Koordinate
+  // ECDH: shared secret = d * Qp → x-coordinate
   ret = mbedtls_ecdh_compute_shared(&grp, &z, &Qp, &d,
                                      mbedtls_ctr_drbg_random, &s_ctr_drbg);
   if (ret) goto done;
 
-  // Shared Secret als 32-Byte Big-Endian ausgeben
+  // Write shared secret as 32-byte big-endian
   ret = mbedtls_mpi_write_binary(&z, sharedSecret, 32);
 
 done:
@@ -164,15 +163,15 @@ done:
 }
 
 /**
- * AES-256-CBC Verschlüsselung + Base64
- *   Key = sharedSecret (32 Bytes)
- *   IV  = sharedSecret[:16]
+ * AES-256-CBC encryption + Base64 encoding
+ *   Key     = sharedSecret (32 bytes)
+ *   IV      = sharedSecret[:16]
  *   Padding = PKCS7
  */
 static bool aesEncryptB64(const char* plaintext, const uint8_t* key32,
                            char* outB64, size_t outB64Size) {
-  size_t inLen     = strlen(plaintext);
-  size_t padded    = ((inLen / 16) + 1) * 16;  // PKCS7 auf 16er-Block
+  size_t  inLen    = strlen(plaintext);
+  size_t  padded   = ((inLen / 16) + 1) * 16;  // PKCS7 pad to 16-byte block
   uint8_t pad_val  = (uint8_t)(padded - inLen);
 
   uint8_t buf[256] = {0};
@@ -181,7 +180,7 @@ static bool aesEncryptB64(const char* plaintext, const uint8_t* key32,
   for (size_t i = inLen; i < padded; i++) buf[i] = pad_val;
 
   uint8_t iv[16];
-  memcpy(iv, key32, 16);  // IV = erste 16 Bytes des Shared Secret
+  memcpy(iv, key32, 16);  // IV = first 16 bytes of shared secret
 
   uint8_t encrypted[256] = {0};
   mbedtls_aes_context aes;
@@ -201,7 +200,7 @@ static bool aesEncryptB64(const char* plaintext, const uint8_t* key32,
   return true;
 }
 
-// MD5(input) → 32-Zeichen Hex-String
+// MD5(input) → 32-character hex string
 static void md5Hex(const char* input, char* hexOut) {
   uint8_t digest[16];
   mbedtls_md5((const uint8_t*)input, strlen(input), digest);
@@ -233,32 +232,32 @@ static void drawSolixData() {
     return;
   }
 
-  // Zeile 1: Titel + Zeitstempel letzter Abruf
+  // Row 1: title + last fetch time (top-right)
   display.drawStr(0, 10, "Solix 3 Pro");
   if (g_last_fetch_time > 0) {
     char timeBuf[6];
     struct tm* t = localtime(&g_last_fetch_time);
     strftime(timeBuf, sizeof(timeBuf), LANG("%H:%M", "%I:%M"), t);
-    display.drawStr(98, 10, timeBuf);  // 5 Zeichen × 6 px = 30 px, passt ab x=98
+    display.drawStr(98, 10, timeBuf);  // 5 chars × 6 px = 30 px, fits from x=98
   }
   display.drawHLine(0, 13, 128);
 
   char buf[22];
 
-  // Zeile 2: Solar
+  // Row 2: solar
   snprintf(buf, sizeof(buf), LANG("Solar: %5dW", "Solar: %5dW"), g_data.solar_w);
   display.drawStr(0, 26, buf);
 
-  // Zeile 3: Batterie / Battery
-  snprintf(buf, sizeof(buf), LANG("Akku: %3d%% %s", "Batt: %3d%% %s"),
-           g_data.battery_soc, g_data.bat_status);
+  // Row 3: battery
+  snprintf(buf, sizeof(buf), LANG("Akku: %3d%%", "Batt: %3d%%"),
+           g_data.battery_soc);
   display.drawStr(0, 38, buf);
 
-  // Zeile 4: Haus / Home
+  // Row 4: home consumption
   snprintf(buf, sizeof(buf), LANG("Haus: %5dW", "Home: %5dW"), g_data.home_w);
   display.drawStr(0, 50, buf);
 
-  // Zeile 5: Netz / Grid
+  // Row 5: grid (import/export)
   if (g_data.grid_w >= 0)
     snprintf(buf, sizeof(buf), LANG("Netz: %5dW Bzg", "Grid: %5dW In "), g_data.grid_w);
   else
@@ -307,10 +306,9 @@ static bool httpPost(const char* endpoint, const String& body,
 // ══════════════════════════════════════════════════════════
 
 static bool ankerLogin() {
-  dispMsg(LANG("Anker Login...", "Anker Login..."),
-          LANG("ECDH + AES...",  "ECDH + AES..."));
+  dispMsg("Anker Login...", "ECDH + AES...");
 
-  // 1) ECDH: Shared Secret berechnen
+  // 1) Compute ECDH shared secret
   char    clientPubHex[131] = {0};
   uint8_t sharedSecret[32]  = {0};
   if (!ecdhComputeShared(clientPubHex, sharedSecret)) {
@@ -318,7 +316,7 @@ static bool ankerLogin() {
     return false;
   }
 
-  // 2) Passwort mit AES-256-CBC verschlüsseln
+  // 2) Encrypt password with AES-256-CBC
   char encPassword[512] = {0};
   if (!aesEncryptB64(ANKER_PASSWORD, sharedSecret, encPassword, sizeof(encPassword))) {
     strncpy(g_error, LANG("AES Fehler", "AES Error"), sizeof(g_error));
@@ -330,21 +328,20 @@ static bool ankerLogin() {
   char transaction[24];
   snprintf(transaction, sizeof(transaction), "%lld000", (long long)now);
 
-  // 4) Login-Request zusammenbauen
+  // 4) Build login request body
   JsonDocument doc;
-  doc["ab"]                          = ANKER_COUNTRY;
+  doc["ab"]                               = ANKER_COUNTRY;
   doc["client_secret_info"]["public_key"] = clientPubHex;
-  doc["enc"]                         = 0;
-  doc["email"]                       = ANKER_EMAIL;
-  doc["password"]                    = encPassword;
-  doc["time_zone"]                   = ANKER_TZ_OFFSET_MS;
-  doc["transaction"]                 = transaction;
+  doc["enc"]                              = 0;
+  doc["email"]                            = ANKER_EMAIL;
+  doc["password"]                         = encPassword;
+  doc["time_zone"]                        = ANKER_TZ_OFFSET_MS;
+  doc["transaction"]                      = transaction;
 
   String body;
   serializeJson(doc, body);
 
-  dispMsg(LANG("Anker Login...", "Anker Login..."),
-          LANG("Sende Anfrage...", "Sending request..."));
+  dispMsg("Anker Login...", LANG("Sende Anfrage...", "Sending request..."));
 
   // 5) POST /passport/login
   String response;
@@ -353,7 +350,7 @@ static bool ankerLogin() {
     return false;
   }
 
-  // 6) Antwort parsen
+  // 6) Parse response
   JsonDocument resp;
   if (deserializeJson(resp, response) != DeserializationError::Ok) {
     strncpy(g_error, LANG("Login JSON Fehler", "Login JSON Error"), sizeof(g_error));
@@ -362,7 +359,7 @@ static bool ankerLogin() {
 
   if (resp["code"] != 0) {
     String msg = resp["msg"] | LANG("unbekannt", "unknown");
-    snprintf(g_error, sizeof(g_error), "Login: %s", msg.substring(0,30).c_str());
+    snprintf(g_error, sizeof(g_error), "Login: %s", msg.substring(0, 30).c_str());
     return false;
   }
 
@@ -374,7 +371,7 @@ static bool ankerLogin() {
     return false;
   }
 
-  strncpy(g_auth_token, token,   sizeof(g_auth_token) - 1);
+  strncpy(g_auth_token, token, sizeof(g_auth_token) - 1);
   md5Hex(user_id, g_gtoken);
   g_logged_in = true;
 
@@ -417,7 +414,6 @@ static bool ankerFetchData() {
     return false;
   }
 
-  // Antwort kann groß sein → Filter-Parsing
   JsonDocument doc;
   DeserializationError err = deserializeJson(doc, response);
   if (err != DeserializationError::Ok) {
@@ -426,7 +422,7 @@ static bool ankerFetchData() {
   }
 
   if (doc["code"] != 0) {
-    // Token abgelaufen? → Re-Login
+    // Token expired → trigger re-login
     if (doc["code"] == 401 || doc["code"] == 100053) {
       g_logged_in = false;
     }
@@ -435,7 +431,7 @@ static bool ankerFetchData() {
 
   JsonObject data = doc["data"];
 
-  // Solarbank-Daten
+  // Solarbank data
   JsonObject sb = data["solarbank_info"]["solarbank_list"][0];
 
   int photovoltaic = atoi(sb["photovoltaic_power"] | "0");
@@ -445,7 +441,7 @@ static bool ankerFetchData() {
   int charging_st  = atoi(sb["charging_status"]     | "3");
   bool online      = (strcmp(sb["status"] | "0", "1") == 0);
 
-  // Vorzeichen Bat-Leistung
+  // Battery power sign and status label
   int bat_power_w;
   const char* bat_stat;
   if (charging_st == 0) {
@@ -459,11 +455,11 @@ static bool ankerFetchData() {
     bat_stat = LANG("Stb", "Stb");
   }
 
-  // Grid
-  JsonObject grid = data["grid_info"];
-  int grid_to_home   = atoi(grid["grid_to_home_power"]           | "0");
-  int pv_to_grid     = atoi(grid["photovoltaic_to_grid_power"]   | "0");
-  int grid_w = grid_to_home - pv_to_grid;
+  // Grid: positive = import from grid, negative = export to grid
+  JsonObject grid    = data["grid_info"];
+  int grid_to_home   = atoi(grid["grid_to_home_power"]         | "0");
+  int pv_to_grid     = atoi(grid["photovoltaic_to_grid_power"] | "0");
+  int grid_w         = grid_to_home - pv_to_grid;
 
   g_data.solar_w     = photovoltaic;
   g_data.battery_soc = battery_pct;
@@ -473,8 +469,8 @@ static bool ankerFetchData() {
   g_data.online      = online;
   g_data.valid       = true;
   strncpy(g_data.bat_status, bat_stat, sizeof(g_data.bat_status) - 1);
-  g_error[0] = 0;
-  g_last_fetch_time = time(nullptr);
+  g_error[0]         = 0;
+  g_last_fetch_time  = time(nullptr);
 
   Serial.printf("[Anker] Sol=%dW Bat=%d%%(%s%dW) Home=%dW Grid=%dW\n",
                 photovoltaic, battery_pct, bat_stat, bat_charge_w, output_w, grid_w);
@@ -499,14 +495,14 @@ static void connectWiFi() {
   }
   Serial.print("[WiFi] IP: "); Serial.println(WiFi.localIP());
 
-  // NTP + Zeitzone (POSIX-String → automatische Sommer-/Winterzeit)
+  // NTP sync + timezone (POSIX TZ string handles DST automatically)
   configTime(0, 0, "pool.ntp.org", "time.nist.gov");
   setenv("TZ", LANG("CET-1CEST,M3.5.0,M10.5.0/3", "UTC0"), 1);
   tzset();
   dispMsg(LANG("WLAN OK", "WiFi OK"),
           WiFi.localIP().toString().c_str(),
           LANG("Warte auf NTP...", "Waiting for NTP..."));
-  // Kurz warten bis NTP synchronisiert
+  // Wait for NTP sync
   time_t t = 0;
   for (int i = 0; i < 20 && t < 1000000; i++) { delay(500); t = time(nullptr); }
 }
@@ -521,7 +517,7 @@ void setup() {
   Serial.begin(115200);
   display.begin();
 
-  // Startbildschirm
+  // Splash screen
   display.clearBuffer();
   display.setFont(u8g2_font_ncenB10_tr);
   display.drawStr(8, 28, "Anker Solix");
@@ -530,12 +526,12 @@ void setup() {
   display.sendBuffer();
   delay(1500);
 
-  // TLS: Zertifikat nicht prüfen (vereinfacht, für lokalen Einsatz ok)
+  // Skip TLS certificate verification (acceptable for local/home use)
   s_wifiClient.setInsecure();
 
   connectWiFi();
 
-  // Login + erste Daten holen
+  // Login and fetch initial data
   if (ankerLogin()) {
     dispMsg(LANG("Login OK!", "Login OK!"),
             LANG("Hole Site-ID...", "Getting Site-ID..."));
@@ -556,7 +552,7 @@ void loop() {
   if (now - lastFetch >= (unsigned long)REFRESH_SEC * 1000UL) {
     lastFetch = now;
 
-    // Bei abgelaufenem Token neu einloggen
+    // Re-login if token has expired
     if (!g_logged_in) {
       if (!ankerLogin()) {
         drawSolixData();

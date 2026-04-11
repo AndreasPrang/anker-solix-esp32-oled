@@ -1,26 +1,26 @@
 #pragma once
 
 // ════════════════════════════════════════════════════
-//  Kopiere diese Datei als config.h und fülle sie aus.
+//  Copy this file to config.h and fill in your values.
 //  cp config.h.example config.h
 // ════════════════════════════════════════════════════
 
-// Sprache / Language: de  oder  en  (ohne Anführungszeichen)
+// Language: de  or  en  (no quotes)
 #define LANGUAGE de
 
-// WLAN
-#define WIFI_SSID      "Dein_WLAN_Name"
-#define WIFI_PASSWORD  "Dein_WLAN_Passwort"
+// WiFi
+#define WIFI_SSID      "Your_WiFi_Name"
+#define WIFI_PASSWORD  "Your_WiFi_Password"
 
-// Anker-Account (App-Login)
-#define ANKER_EMAIL    "deine@email.de"
-#define ANKER_PASSWORD "dein_anker_passwort"
+// Anker account (app login credentials)
+#define ANKER_EMAIL    "your@email.com"
+#define ANKER_PASSWORD "your_anker_password"
 #define ANKER_COUNTRY  "DE"
 
-// Zeitzone-Offset in Millisekunden
-// GMT+1  = 3600000  (Deutschland Winter)
-// GMT+2  = 7200000  (Deutschland Sommer)
+// Timezone offset in milliseconds (used in the login request body)
+// GMT+1  = 3600000  (Germany winter / CET)
+// GMT+2  = 7200000  (Germany summer / CEST)
 #define ANKER_TZ_OFFSET_MS  3600000
 
-// Aktualisierungsintervall in Sekunden
+// Data refresh interval in seconds
 #define REFRESH_SEC  30
