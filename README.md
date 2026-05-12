@@ -1,50 +1,61 @@
-# Anker Solix 3 Pro – OLED Display
+# Anker Solix 3 Pro – E-Paper Display
 
-Live status display for the Anker Solix solar system on an ESP32 with a 0.96" OLED.
+Live status display for the Anker Solix solar system on an ESP32 with a 1.54" 3-colour E-Paper display (Red/Black/White).
 
 Runs entirely on the ESP32 – no server, no proxy required.
 
 ## Display
 
 ```
-Solix 3 Pro        14:35
-────────────────────────
-Solar:    450W
-Akku:      85%
-Haus:     320W
-Netz:       0W Bzg
+Solix 3 Pro          21:07   ← red title + right-aligned time
+────────────────────────────── ← red separator
+Solar:       0W
+Akku:       73%              ← red if < 20 %
+Bat-W:      +0W
+Haus:      305W
+Netz:     0W Bzg
+Online
 ```
 
-| Row   | Description                              |
-|-------|------------------------------------------|
-| Solar | Current solar power (W)                  |
-| Akku  | Battery state of charge (%)              |
-| Haus  | Home consumption (W)                     |
-| Netz  | Grid import (+) or export (−) (W)        |
+| Row    | Description                                          |
+|--------|------------------------------------------------------|
+| Solar  | Current solar power (W)                              |
+| Akku   | Battery state of charge (%) — red when below 20 %   |
+| Bat-W  | Battery charge (+) / discharge (−) power (W)         |
+| Haus   | Home consumption (W)                                 |
+| Netz   | Grid import (Bzg) or export (Ein) (W)                |
+| Online | Device connectivity status                           |
 
 The top-right corner shows the time of the last successful data fetch.
+
+> **Note:** 3-colour E-Paper requires a full refresh (~20 s). Partial refresh is not supported by this panel type.
 
 ## Hardware
 
 | Component | Specification |
 |-----------|---------------|
-| Microcontroller | ESP32 (any board) |
-| Display | 0.96" OLED, 128×64, I2C, SH1106 or SSD1306 |
+| Microcontroller | ESP32 WROOM-32 (or any ESP32 board) |
+| Display | 1.54" E-Paper, 200×200, 3-colour (Red/Black/White), SPI |
+| Display driver | SSD1682 / GDEW0154Z90 (Seengreat Rev 1.2) |
 
 ### Wiring
 
-| OLED pin | ESP32 pin |
-|----------|-----------|
-| VCC      | 3.3 V     |
-| GND      | GND       |
-| SDA      | GPIO 21   |
-| SCL      | GPIO 22   |
+| E-Paper pin | ESP32 pin | Notes |
+|-------------|-----------|-------|
+| VCC         | 3V3       |       |
+| GND         | GND       |       |
+| DIN (MOSI)  | G23       | Hardware SPI |
+| CLK         | G18       | Hardware SPI |
+| CS          | G5        | `EPD_CS` in config.h |
+| D/C         | G17       | `EPD_DC` in config.h |
+| RST         | G16       | `EPD_RST` in config.h |
+| BUSY        | G4        | `EPD_BUSY` in config.h (wired but unused — delay-based timing) |
 
 ## Requirements
 
 - [arduino-cli](https://arduino.github.io/arduino-cli/) or Arduino IDE 2.x
 - ESP32 board package: `esp32:esp32` ≥ 3.x
-- Libraries: `U8g2`, `ArduinoJson`
+- Libraries: `GxEPD2`, `Adafruit GFX Library`, `ArduinoJson`
 
 ### arduino-cli setup (once)
 
@@ -54,7 +65,7 @@ arduino-cli config add board_manager.additional_urls \
 
 arduino-cli core update-index
 arduino-cli core install esp32:esp32
-arduino-cli lib install "U8g2" "ArduinoJson"
+arduino-cli lib install "GxEPD2" "Adafruit GFX Library" "ArduinoJson"
 ```
 
 ## Installation
@@ -67,13 +78,14 @@ cp oled_anker_direct/config.h.example oled_anker_direct/config.h
 #    - WIFI_SSID / WIFI_PASSWORD
 #    - ANKER_EMAIL / ANKER_PASSWORD
 #    - LANGUAGE  (de or en)
+#    - EPD_CS / EPD_DC / EPD_RST / EPD_BUSY  (SPI pins)
 
 # 3. Compile & flash
 arduino-cli compile --fqbn esp32:esp32:esp32 oled_anker_direct/
 arduino-cli upload  --fqbn esp32:esp32:esp32 --port /dev/cu.usbserial-0001 oled_anker_direct/
 ```
 
-Find the port on macOS: `ls /dev/cu.*`
+Find the port on macOS: `ls /dev/cu.*`  
 Find the port on Linux: `/dev/ttyUSB0` or `/dev/ttyACM0`
 
 ## How it works
@@ -88,18 +100,7 @@ Find the port on Linux: `/dev/ttyUSB0` or `/dev/ttyACM0`
 This implementation is based on the reverse engineering of the Anker API by
 [thomluther/anker-solix-api](https://github.com/thomluther/anker-solix-api).
 
-## Changing the display type
+## Display variants
 
-`oled_anker_direct.ino` uses the **SH1106** by default.
-For SSD1306, replace the following line:
-
-```cpp
-// SH1106 (default):
-U8G2_SH1106_128X64_NONAME_F_HW_I2C display(U8G2_R2, U8X8_PIN_NONE);
-
-// SSD1306:
-U8G2_SSD1306_128X64_NONAME_F_HW_I2C display(U8G2_R2, U8X8_PIN_NONE);
-```
-
-`U8G2_R2` = 180° rotation (display mounted upside down).
-No rotation: `U8G2_R0`.
+The `SH1106_128x64` branch contains the original version using a 0.96" SH1106 I2C OLED.
+The `main` branch targets the 1.54" 3-colour E-Paper display described above.

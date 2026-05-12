@@ -25,6 +25,9 @@
 // Data refresh interval in seconds
 #define REFRESH_SEC  30
 
-// OLED I2C pins (ESP32 defaults: SDA=21, SCL=22)
-#define OLED_SDA  21
-#define OLED_SCL  22
+// E-Paper SPI pins
+// ESP32 hardware SPI MOSI=23 and CLK=18 are used automatically.
+#define EPD_CS    5
+#define EPD_DC    17
+#define EPD_RST   16
+#define EPD_BUSY  4

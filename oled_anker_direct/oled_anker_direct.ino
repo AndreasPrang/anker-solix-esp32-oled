@@ -1,6 +1,6 @@
 /**
- * Anker Solix 3 Pro – direct OLED status display
- * ESP32 + 0.96" SH1106 128×64 I2C
+ * Anker Solix 3 Pro – direct E-Paper status display
+ * ESP32 + 1.54" SSD1680 200×200 SPI
  *
  * Authentication directly against Anker Cloud:
  *   ECDH P-256  → shared secret
@@ -14,8 +14,10 @@
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
-#include <U8g2lib.h>
-#include <Wire.h>
+#include <GxEPD2_3C.h>
+#include <Fonts/FreeSans9pt7b.h>
+#include <Fonts/FreeSansBold12pt7b.h>
+#include <SPI.h>
 #include <time.h>
 
 // mbedTLS (included in ESP32 Arduino framework)
@@ -39,7 +41,9 @@
 #define LANG(de, en)          _LANG_EXPAND(LANGUAGE, de, en)
 
 // ── Display ────────────────────────────────────────────────
-U8G2_SH1106_128X64_NONAME_F_HW_I2C display(U8G2_R2, U8X8_PIN_NONE, OLED_SCL, OLED_SDA);
+// 1.54" 3-colour (Red/Black/White) 200×200, SSD1682 / GDEW0154Z90
+GxEPD2_3C<GxEPD2_154_Z90c, GxEPD2_154_Z90c::HEIGHT> display(
+    GxEPD2_154_Z90c(EPD_CS, EPD_DC, EPD_RST, -1));
 
 // ── Anker API ──────────────────────────────────────────────
 static const char* API_BASE = "https://ankerpower-api-eu.anker.com";
@@ -208,95 +212,9 @@ static void md5Hex(const char* input, char* hexOut) {
 }
 
 // ══════════════════════════════════════════════════════════
-//  SPLASH ANIMATION
+//  DISPLAY HELPERS (GxEPD2)
 // ══════════════════════════════════════════════════════════
 
-// Lightning bolt built from four filled triangles forming two trapezoids.
-// Upper section slants upper-right → lower-left.
-// Lower section is offset right by 4 px to create the characteristic kink.
-//
-//   ████████████████        ← upper trapezoid (y = 3..21)
-//    ████████████████
-//     ████████████████
-//      ████████████████
-//           ████████████████  ← lower trapezoid (y = 21..41)
-//            ████████████████
-//             ████████████████
-//              ████████████████
-//
-static void drawBolt() {
-  display.setDrawColor(1);
-  // Upper trapezoid
-  display.drawTriangle(52, 3,  68, 3,  60, 21);
-  display.drawTriangle(52, 3,  60, 21, 44, 21);
-  // Lower trapezoid (4 px kink to the right)
-  display.drawTriangle(64, 21, 80, 21, 72, 41);
-  display.drawTriangle(64, 21, 72, 41, 56, 41);
-}
-
-static void splashAnimation() {
-  // ── Phase 1: bolt flickers three times ──────────────────
-  const int onMs[]  = { 60, 80, 100 };
-  const int offMs[] = { 80, 80,  40 };
-  for (int i = 0; i < 3; i++) {
-    display.clearBuffer();
-    drawBolt();
-    display.sendBuffer();
-    delay(onMs[i]);
-    display.clearBuffer();
-    display.sendBuffer();
-    delay(offMs[i]);
-  }
-
-  // ── Phase 2: bolt holds ──────────────────────────────────
-  display.clearBuffer();
-  drawBolt();
-  display.sendBuffer();
-  delay(260);
-
-  // ── Phase 3: "ANKER" wipes in from left ─────────────────
-  display.setFont(u8g2_font_logisoso20_tr);
-  int tw = (int)display.getStrWidth("ANKER");
-  int tx = (128 - tw) / 2;
-  int ty = 63;
-
-  for (int clip = tx; clip <= tx + tw + 4; clip += 4) {
-    display.clearBuffer();
-    drawBolt();
-    display.setClipWindow(0, 42, clip, 63);
-    display.drawStr(tx, ty, "ANKER");
-    display.setMaxClipWindow();
-    display.sendBuffer();
-    delay(14);
-  }
-
-  // ── Phase 4: full logo – brief hold ─────────────────────
-  display.clearBuffer();
-  drawBolt();
-  display.setFont(u8g2_font_logisoso20_tr);
-  display.drawStr(tx, ty, "ANKER");
-  display.sendBuffer();
-  delay(320);
-
-  // ── Phase 5: white flash ─────────────────────────────────
-  display.setDrawColor(1);
-  display.drawBox(0, 0, 128, 64);
-  display.sendBuffer();
-  delay(80);
-  display.clearBuffer();
-  display.sendBuffer();
-  delay(55);
-
-  // ── Phase 6: logo reappears, hold, hand off ──────────────
-  display.clearBuffer();
-  drawBolt();
-  display.setFont(u8g2_font_logisoso20_tr);
-  display.drawStr(tx, ty, "ANKER");
-  display.sendBuffer();
-  delay(380);
-
-  display.setDrawColor(1);  // restore for rest of firmware
-}
 
 // ══════════════════════════════════════════════════════════
 //  DISPLAY
@@ -304,60 +222,87 @@ static void splashAnimation() {
 
 static void dispMsg(const char* line1, const char* line2 = nullptr,
                     const char* line3 = nullptr) {
-  display.clearBuffer();
-  display.setFont(u8g2_font_6x10_tr);
-  if (line1) display.drawStr(0, 12, line1);
-  if (line2) display.drawStr(0, 26, line2);
-  if (line3) display.drawStr(0, 40, line3);
-  display.sendBuffer();
+  display.setFullWindow();
+  display.firstPage();
+  do {
+    display.fillScreen(GxEPD_WHITE);
+    display.setTextColor(GxEPD_BLACK);
+    display.setFont(&FreeSans9pt7b);
+    if (line1) { display.setCursor(4, 20); display.print(line1); }
+    if (line2) { display.setCursor(4, 55); display.print(line2); }
+    if (line3) { display.setCursor(4, 90); display.print(line3); }
+  } while (display.nextPage());
 }
 
 static void drawSolixData() {
-  display.clearBuffer();
-  display.setFont(u8g2_font_6x10_tr);
+  display.setFullWindow();
+  display.firstPage();
+  do {
+    display.fillScreen(GxEPD_WHITE);
+    display.setTextColor(GxEPD_BLACK);
 
-  if (!g_data.valid) {
-    display.drawStr(0, 12, "Anker Solix");
-    display.drawStr(0, 26, g_error[0] ? g_error : LANG("Verbinde...", "Connecting..."));
-    display.sendBuffer();
-    return;
-  }
+    if (!g_data.valid) {
+      display.setFont(&FreeSansBold12pt7b);
+      display.setCursor(4, 24); display.print("Anker Solix");
+      display.setFont(&FreeSans9pt7b);
+      display.setCursor(4, 55);
+      display.print(g_error[0] ? g_error : LANG("Verbinde...", "Connecting..."));
+      continue;
+    }
 
-  // Row 1: title + last fetch time (top-right)
-  display.drawStr(0, 10, "Solix 3 Pro");
-  if (g_last_fetch_time > 0) {
-    char timeBuf[6];
-    struct tm* t = localtime(&g_last_fetch_time);
-    strftime(timeBuf, sizeof(timeBuf), LANG("%H:%M", "%I:%M"), t);
-    display.drawStr(98, 10, timeBuf);  // 5 chars × 6 px = 30 px, fits from x=98
-  }
-  display.drawHLine(0, 13, 128);
+    char buf[32];
 
-  char buf[22];
+    // Title row (red)
+    display.setFont(&FreeSansBold12pt7b);
+    display.setTextColor(GxEPD_RED);
+    display.setCursor(4, 22);
+    display.print("Solix 3 Pro");
+    if (g_last_fetch_time > 0) {
+      char timeBuf[6];
+      struct tm* t = localtime(&g_last_fetch_time);
+      strftime(timeBuf, sizeof(timeBuf), LANG("%H:%M", "%I:%M"), t);
+      // Right-align time with 4px margin
+      int16_t x1, y1; uint16_t tw, th;
+      display.getTextBounds(timeBuf, 0, 0, &x1, &y1, &tw, &th);
+      display.setCursor(200 - (int16_t)tw - x1 - 4, 22);
+      display.print(timeBuf);
+    }
+    display.drawLine(0, 28, 199, 28, GxEPD_RED);
 
-  // Rows 2-5: values aligned so units (W / %) are all at column 12 (x=72px).
-  // "Solar:" is 6 chars → 1 space; others are 5 chars → 2 spaces; all use %5d.
+    display.setFont(&FreeSans9pt7b);
+    display.setTextColor(GxEPD_BLACK);
+    const int16_t lh = 26;  // line height
+    int16_t y = 28 + lh;
 
-  // Row 2: solar
-  snprintf(buf, sizeof(buf), LANG("Solar: %5dW", "Solar: %5dW"), g_data.solar_w);
-  display.drawStr(0, 26, buf);
+    // Solar
+    snprintf(buf, sizeof(buf), LANG("Solar:  %5dW", "Solar:  %5dW"), g_data.solar_w);
+    display.setCursor(4, y); display.print(buf); y += lh;
 
-  // Row 3: battery
-  snprintf(buf, sizeof(buf), LANG("Akku:  %5d%%", "Batt:  %5d%%"), g_data.battery_soc);
-  display.drawStr(0, 38, buf);
+    // Battery SOC (rot wenn < 20%)
+    snprintf(buf, sizeof(buf), LANG("Akku:   %5d%%", "Batt:   %5d%%"), g_data.battery_soc);
+    display.setTextColor(g_data.battery_soc < 20 ? GxEPD_RED : GxEPD_BLACK);
+    display.setCursor(4, y); display.print(buf); y += lh;
+    display.setTextColor(GxEPD_BLACK);
 
-  // Row 4: home consumption
-  snprintf(buf, sizeof(buf), LANG("Haus:  %5dW", "Home:  %5dW"), g_data.home_w);
-  display.drawStr(0, 50, buf);
+    // Battery power
+    snprintf(buf, sizeof(buf), LANG("Bat-W:  %+5dW", "Bat-W:  %+5dW"), g_data.bat_power_w);
+    display.setCursor(4, y); display.print(buf); y += lh;
 
-  // Row 5: grid (import/export)
-  if (g_data.grid_w >= 0)
-    snprintf(buf, sizeof(buf), LANG("Netz:  %5dW Bzg", "Grid:  %5dW In "), g_data.grid_w);
-  else
-    snprintf(buf, sizeof(buf), LANG("Netz:  %5dW Ein", "Grid:  %5dW Out"), -g_data.grid_w);
-  display.drawStr(0, 62, buf);
+    // Home
+    snprintf(buf, sizeof(buf), LANG("Haus:   %5dW", "Home:   %5dW"), g_data.home_w);
+    display.setCursor(4, y); display.print(buf); y += lh;
 
-  display.sendBuffer();
+    // Grid
+    if (g_data.grid_w >= 0)
+      snprintf(buf, sizeof(buf), LANG("Netz:  %5dW Bzg", "Grid:  %5dW In"), g_data.grid_w);
+    else
+      snprintf(buf, sizeof(buf), LANG("Netz:  %5dW Ein", "Grid:  %5dW Out"), -g_data.grid_w);
+    display.setCursor(4, y); display.print(buf); y += lh;
+
+    // Status
+    display.setCursor(4, y);
+    display.print(g_data.online ? LANG("Online", "Online") : LANG("Offline", "Offline"));
+  } while (display.nextPage());
 }
 
 // ══════════════════════════════════════════════════════════
@@ -608,9 +553,11 @@ static unsigned long lastFetch = 0;
 
 void setup() {
   Serial.begin(115200);
-  display.begin();
-
-  splashAnimation();
+  delay(500);
+  Serial.println("[boot] Serial OK");
+  Serial.println("[boot] display.init()...");
+  display.init(115200);
+  Serial.println("[boot] display.init() done");
 
   // Skip TLS certificate verification (acceptable for local/home use)
   s_wifiClient.setInsecure();
